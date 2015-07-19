@@ -1,0 +1,124 @@
+Perl Diving
+
+Naff title I know, I did have another in mind but I felt that it was probably a bit too much! 
+
+So I set myself a little challenge, to write a hello world web app in Perl, just for shits and giggles really, and also to see what the old gent Perl is like before it disappears over the horizon into senescence.
+
+
+
+Pre-Requisites
+
+- Instalation of Vagrant; http://www.vagrantup.com/downloads 
+- Instalation of VirtualBox; https://www.virtualbox.org/ 
+- Some experience of git bash and bitbucket if you want to work with the repo
+- Following on from above, a clone of the repo; https://bitbucket.org/jdheywood/perl-diving
+- A tweak to the config.vm.synced_folder to match your cloned repo location
+
+So install vagrant and virtualbox, then in your working folder (mine is C:\dev\perl-example) run the following commands
+
+$ vagrant init
+
+$ vagrant box add brianwisti/trusty-mongo-mojo
+
+These two commands initialise a vagrant file in your directory and then provision a new vagrant box with Perl, mojolicious and mongo already installed and configured, thanks to Brian Wisti http://randomgeekery.org/about/ who set up this vagrant box for peeps like us to play around with, nice one Brian. You can see how this box was provisioned if you head on over to this article here, just in case you wanted to provision your own; http://randomgeekery.org/tools/2014/08/05_trusty-mongo-mojo.html
+
+
+
+So What?
+
+So now I have an ubuntu vagrant box up and running with perl, mojo and mongo running, what now?
+
+Firstly we'll need a way to edit files on the VM/guest, ideally from our host machine so that we can take advantage of our preferred development environment and tooling, fortunately the clever vagrant folks have given us a way to do that via synced folders, if you take a look at the Vagrantfile in the repo you'll see the following line which is helpfully explained by the comments above it (also from the vagrnatup.com website, seriously RTFM if any of my rambin is unclear); 
+
+config.vm.synced_folder "C:/dev/perl-example/data", "/vagrant_data"
+
+Next we'll also need a way to access any webserver(s) we set up on the VM/guest from our host machine, again there's a simple configuration setting in our Vagrantfile that can make that magic happen, as per below;
+
+config.vm.network "forwarded_port", guest: 3000, host: 3000
+
+
+
+Learning Time
+
+Better find a tutorial then, oh look here's a basic perl tutorial; http://www.comp.leeds.ac.uk/Perl/basic.html
+
+So let's have a crack at the first hello world app from here, ok got the first example program working, doesn't do much though. I could follow the titorial through to the end and learn perl syntax, or I could just dive right in to the deep end and see if I can do something a little more interesting On that note how about we look into this mojolicious thingy we got as part of our provisioned vagrant box; http://mojolicio.us/
+
+In fact over at Brian's blog http://randomgeekery.org/tools/2014/08/05_trusty-mongo-mojo.html he uses an example from the mango github page; https://github.com/oliwer/mango this is a mongodb driver built on top of mojolicious lite, it shows a web server request/response with mongo access and persistence, all in 33 lines of code (including comments), I'll re-paste it here as it's worth review;  
+
+
+use Mojolicious::Lite;
+use Mango;
+use Mango::BSON ':bson';
+
+my $uri = 'mongodb://localhost:27017/test';
+helper mango => sub { state $mango = Mango->new($uri) };
+
+# Store and retrieve information non-blocking
+get '/' => sub {
+  my $c = shift;
+
+  my $collection = $c->mango->db->collection('visitors');
+  my $ip         = $c->tx->remote_address;
+
+  # Store information about current visitor
+  $collection->insert({when => bson_time, from => $ip} => sub {
+    my ($collection, $err, $oid) = @_;
+
+    return $c->render_exception($err) if $err;
+
+    # Retrieve information about previous visitors
+    $collection->find->sort({when => -1})->fields({_id => 0})->all(sub {
+      my ($collection, $err, $docs) = @_;
+
+      return $c->render_exception($err) if $err;
+
+      # And show it to current visitor
+      $c->render(json => $docs);
+    });
+  });
+};
+
+app->start;
+
+
+Seems like old man Perl can show the new kids on the block a thing or two, how many lines of code would this take in .NET? (not that .NET is particularly new but still think about a .NET MVC app using the Mongo C# driver, even with a nice package to abstract the data access this would be an order of magnitude more code to do the same thing as this example).
+
+Ok so let's try and dissect what these 33 lines of Perl are doing then, looks like I'll need that Perl syntax after all, dammit! Ok better do some reading then, one moment please dear reader...
+
+Right, back to our 33 line wonder, this in my totally newb non-expert opinion is a rough breakdown of what is going on here; 
+
+- First off some use statements to pull in the packages we want to use in our program, doesn't take a genius to figure that part out
+
+- Next we set a private variable (my $uri) to our mongo connection string. This article helps explain the Perl my variable declaration; http://stackoverflow.com/questions/845060/what-is-the-difference-between-my-and-our-in-perl
+
+- The very next line then uses this connection string to initialise a mongo helper, using the Mango library/package, this is helpfully referenced as mango
+
+- The majority of this program is taken up with a function that handles get requests to the rot url of the web application in question, this starts on line 9 of the code; get '/' => sub { ... 
+
+- The first thing that this function does is; my $c = shift; WTF is this? I hear you ask, fucked if I know but stack overflow does; http://stackoverflow.com/questions/19161887/my-self-shift-in-perl-an-explanation 
+
+- So now we have a reference to the calling program, which means we can access the helper we set up earlier from this reference, as on line 12; my $collection = $c->mango->db->collection('visitors');
+
+- After we get a reference to our mongo collection we then get the IP address of the machine that made the get request to our server via the Mojo controller attribute 'tx'; http://mojolicio.us/perldoc/Mojolicious/Controller#tx
+
+- The next 15 or so lines of code do the following;
+ - Attempt to store information about the current visit, returning an exception response if an error is found
+  - Then attempt to retrieve information about previous visits, again returning an exception response if an error is found
+   - If no problems it then returns a response containing information of all previous visits, including the current one
+
+- Finally the application is started, when executed it will listen for requests on the default port used by mojolicious (3000) and if any match the routing set up, which in this case is for GET resuests to the root url only, it will process these as described.
+
+Not bad for 30 or so lines of code eh? This is only a brief example of the Mojolicious framework syntax, just enough to demonstrate the basic usage of the Mango library, there's plenty more Mojo to learn and play with over at http://mojolicio.us/
+
+
+
+
+Summary
+
+In summary, it looks like Perl may be worth investing some time in, with frameworks such as Mojolicious we can write web applications in a similar way to node (non-blocking), perhaps it is worth looking into this if you are after an open source and mature language/framework for your next project. 
+
+
+Cheers for reading all, until next timne
+
+

@@ -1,0 +1,1 @@
+If you can see this then we're sharing folders correctly with vagrant, nice!
